@@ -1,0 +1,329 @@
+.libPaths("D:/R-library")
+.libPaths()
+library(GEOquery)
+library(Seurat)
+library(tidyverse)
+library(data.table)
+library(R.utils)
+dir.create("scripts")
+dir.create("data")
+dir.create("results")
+dir.create("figures")
+## Download processed scRNA-seq data from GEO (GSE149614)
+getGEOSuppFiles(
+  GEO           = "GSE149614",
+  baseDir       = "data",
+  makeDirectory = FALSE
+)
+list.files("data")
+## Decompress the large counts file (needed once; fread cannot
+## memory-map directly from a large .gz file)
+dir.create("data/unzipped", showWarnings = FALSE)
+
+counts_txt_path <- "data/unzipped/GSE149614_HCC.scRNAseq.S71915.count.txt"
+
+if (!file.exists(counts_txt_path)) {
+  gunzip(
+    "data/GSE149614_HCC.scRNAseq.S71915.count.txt.gz",
+    destname  = counts_txt_path,
+    remove    = FALSE,
+    overwrite = TRUE
+  )
+}
+file.exists("data/unzipped/GSE149614_HCC.scRNAseq.S71915.count.txt")
+## Read column (cell barcode) names only — fast, doesn't load full data
+header    <- fread(counts_txt_path, nrows = 0)
+col_names <- colnames(header)
+rm(header); gc()
+
+## Sample codes are embedded in the cell barcode prefix, e.g.
+## "HCC01T_AAACCTGAGGGCATGT" -> sample "HCC01T"
+## Suffix meaning: T = primary Tumor (PT), N = Normal liver (NTL),
+##                 P = PVTT, L = Lymph node metastasis (MLN)
+sample_prefixes <- unique(sub("_.*", "", col_names[-1]))
+
+length(sample_prefixes)
+sample_prefixes
+## Build one Seurat object per sample (processed one at a time to
+## keep memory usage manageable)
+seurat_list <- list()
+
+for (s in sample_prefixes) {
+  
+  message("Processing sample: ", s)
+  
+  cols_s <- c("V1", col_names[grepl(paste0("^", s, "_"), col_names)])
+  
+  counts_s <- fread(counts_txt_path, select = cols_s)
+  
+  gene_names_s <- counts_s$V1
+  mat_s <- as.matrix(counts_s[, -1])
+  rownames(mat_s) <- gene_names_s
+  rm(counts_s)
+  
+  seurat_list[[s]] <- CreateSeuratObject(
+    counts       = mat_s,
+    project      = s,
+    min.cells    = 0,
+    min.features = 0
+  )
+  
+  rm(mat_s)
+  gc()
+}
+
+message("All samples processed. Total objects: ", length(seurat_list))
+
+## Save checkpoint immediately
+saveRDS(seurat_list, "data/seurat_list_21_samples.rds")
+message("Saved: data/seurat_list_21_samples.rds")
+seurat_list <- readRDS("data/seurat_list_21_samples.rds")
+seu_merged <- merge(
+  x = seurat_list[[1]],
+  y = seurat_list[-1],
+  add.cell.ids = names(seurat_list)
+)
+seu_merged
+dim(seu_merged)
+new_names <- sub("^([^_]+)_\\1_", "\\1_", colnames(seu_merged))
+head(new_names)
+seu_merged <- RenameCells(seu_merged, new.names = new_names)
+head(colnames(seu_merged))
+cell_meta <- fread("data/GSE149614_HCC.metadata.updated.txt.gz")
+cell_meta_ordered <- cell_meta[match(colnames(seu_merged), cell_meta$Cell), ]
+sum(is.na(cell_meta_ordered$Cell))
+seu_merged$patient  <- cell_meta_ordered$patient
+seu_merged$site     <- cell_meta_ordered$site
+seu_merged$celltype_paper <- cell_meta_ordered$celltype
+seu_merged$stage    <- cell_meta_ordered$stage
+seu_merged$virus    <- cell_meta_ordered$virus
+seu_merged$tissue <- recode(seu_merged$site,
+  "Normal" = "NTL",
+  "Tumor"  = "PT",
+  "PVTT"   = "PVTT",
+  "Lymph"  = "MLN"
+)
+table(seu_merged$tissue)
+table(seu_merged$celltype_paper)
+saveRDS(seu_merged, "data/seu_merged_raw.rds")
+seu_merged[["percent.mt"]] <- PercentageFeatureSet(seu_merged, pattern = "^MT-")
+seu_merged <- subset(
+  seu_merged,
+  subset = nFeature_RNA > 200 & nFeature_RNA < 8000 & percent.mt < 10
+)
+dim(seu_merged)
+saveRDS(seu_merged, "data/seu_merged_after_qc.rds")
+seu_merged[["RNA"]] <- split(seu_merged[["RNA"]], f = seu_merged$patient)
+seu_merged <- NormalizeData(seu_merged)
+seu_merged <- FindVariableFeatures(seu_merged)
+seu_merged <- ScaleData(seu_merged, features = VariableFeatures(seu_merged))
+saveRDS(seu_merged, "data/seu_merged_after_scaling.rds")
+file.exists("data/seu_merged_after_scaling.rds")
+.libPaths("D:/R-library")
+library(Seurat)
+library(tidyverse)
+library(data.table)
+seu_merged <- readRDS("data/seu_merged_after_scaling.rds")
+file.info("data/seu_merged_after_scaling.rds")$size
+seu_merged <- readRDS("data/seu_merged_after_scaling.rds")
+seu_merged <- readRDS("data/seu_merged_after_qc.rds")
+dim(seu_merged)
+seu_merged[["RNA"]] <- split(seu_merged[["RNA"]], f = seu_merged$patient)
+seu_merged <- NormalizeData(seu_merged)
+seu_merged <- FindVariableFeatures(seu_merged)
+seu_merged <- ScaleData(seu_merged, features = VariableFeatures(seu_merged))
+saveRDS(seu_merged, "data/seu_merged_after_scaling.rds")
+test_read <- readRDS("data/seu_merged_after_scaling.rds")
+dim(test_read)
+rm(test_read)
+seu_merged <- RunPCA(seu_merged)
+saveRDS(seu_merged, "data/seu_merged_after_pca.rds")
+test_read <- readRDS("data/seu_merged_after_pca.rds")
+dim(test_read)
+rm(test_read)
+seu_merged <- IntegrateLayers(
+  object = seu_merged,
+  method = CCAIntegration,
+  orig.reduction = "pca",
+  new.reduction = "integrated.cca"
+)
+seu_merged
+gc()
+seu_merged <- IntegrateLayers(
+  object = seu_merged,
+  method = RPCAIntegration,
+  orig.reduction = "pca",
+  new.reduction = "integrated.rpca"
+)
+seu_merged
+saveRDS(seu_merged, "data/seu_merged_after_integration.rds")
+test_read <- readRDS("data/seu_merged_after_integration.rds")
+dim(test_read)
+rm(test_read)
+.libPaths("D:/R-library")
+library(Seurat)
+library(tidyverse)
+library(data.table)
+seu_merged <- readRDS("data/seu_merged_after_integration.rds")
+dim(seu_merged)
+seu_merged <- RunUMAP(seu_merged, reduction = "integrated.rpca", dims = 1:30)
+seu_merged <- FindNeighbors(seu_merged, reduction = "integrated.rpca", dims = 1:30)
+seu_merged <- FindClusters(seu_merged, resolution = 1.0)
+.libPaths("D:/R-library")
+library(Seurat)
+library(tidyverse)
+library(data.table)
+seu_merged <- readRDS("data/seu_merged_after_integration.rds")
+dim(seu_merged)
+seu_merged <- RunUMAP(seu_merged, reduction = "integrated.rpca", dims = 1:30)
+seu_merged <- FindNeighbors(seu_merged, reduction = "integrated.rpca", dims = 1:30)
+seu_merged <- FindClusters(seu_merged, resolution = 1.0)
+saveRDS(seu_merged, "data/seu_merged_after_clustering.rds")
+test_read <- readRDS("data/seu_merged_after_clustering.rds")
+dim(test_read)
+rm(test_read)
+DimPlot(seu_merged, reduction = "umap", label = TRUE)
+ggsave("figures/umap_by_celltype_paper.pdf", width = 8, height = 6)
+cluster_composition <- table(seu_merged$seurat_clusters, seu_merged$celltype_paper)
+cluster_composition
+cluster_annotations <- apply(cluster_composition, 1, function(x) names(which.max(x)))
+cluster_annotations
+seu_merged$major_celltype <- cluster_annotations[as.character(seu_merged$seurat_clusters)]
+class(seu_merged$seurat_clusters)
+head(names(cluster_annotations))
+head(as.character(seu_merged$seurat_clusters))
+seu_merged$major_celltype <- unname(cluster_annotations[as.character(seu_merged$seurat_clusters)])
+table(seu_merged$major_celltype)
+saveRDS(seu_merged, "data/seu_final_annotated.rds")
+test_read <- readRDS("data/seu_final_annotated.rds")
+dim(test_read)
+rm(test_read)
+library(tidyverse)
+prop_df <- seu_merged@meta.data %>%
+  group_by(patient, tissue, major_celltype) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(patient, tissue) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+head(prop_df)
+p_bar <- prop_df %>%
+  ggplot(aes(x = patient, y = prop, fill = major_celltype)) +
+  geom_col() +
+  facet_grid(~ tissue, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  labs(y = "Proportion of cells", x = NULL, fill = "Cell type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+p_bar
+ggsave("figures/composition_stacked_bar.pdf", p_bar, width = 12, height = 6)
+comp_pt_vs_met <- prop_df %>%
+  filter(tissue %in% c("PT", "PVTT", "MLN")) %>%
+  mutate(group = ifelse(tissue == "PT", "Primary", "Metastatic")) %>%
+  group_by(major_celltype) %>%
+  summarise(
+    p_value = tryCatch(
+      wilcox.test(prop ~ group)$p.value,
+      error = function(e) NA
+    ),
+    mean_primary    = mean(prop[group == "Primary"], na.rm = TRUE),
+    mean_metastatic = mean(prop[group == "Metastatic"], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(p_value)
+
+comp_pt_vs_met
+print(comp_pt_vs_met, width = Inf)
+write_csv(comp_pt_vs_met, "results/composition_PT_vs_Metastatic.csv")
+Idents(seu_merged) <- seu_merged$tissue
+
+hep_cells <- subset(seu_merged, subset = major_celltype == "Hepatocyte" & tissue %in% c("PT", "PVTT"))
+de_hep_pt_vs_pvtt <- FindMarkers(
+  hep_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+seu_merged <- JoinLayers(seu_merged)
+Idents(seu_merged) <- seu_merged$tissue
+
+hep_cells <- subset(seu_merged, subset = major_celltype == "Hepatocyte" & tissue %in% c("PT", "PVTT"))
+de_hep_pt_vs_pvtt <- FindMarkers(
+  hep_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+head(de_hep_pt_vs_pvtt[order(de_hep_pt_vs_pvtt$p_val_adj), ], 15)
+write.csv(de_hep_pt_vs_pvtt, "results/DE_Hepatocyte_PT_vs_PVTT.csv")
+myeloid_cells <- subset(seu_merged, subset = major_celltype == "Myeloid" & tissue %in% c("PT", "PVTT"))
+de_myeloid_pt_vs_pvtt <- FindMarkers(
+  myeloid_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+head(de_myeloid_pt_vs_pvtt[order(de_myeloid_pt_vs_pvtt$p_val_adj), ], 15)
+write.csv(de_myeloid_pt_vs_pvtt, "results/DE_Myeloid_PT_vs_PVTT.csv")
+.libPaths("D:/R-library")
+library(Seurat)
+library(tidyverse)
+seu_merged <- readRDS("data/seu_final_annotated.rds")
+tnk_cells <- subset(seu_merged, subset = major_celltype == "T/NK" & tissue %in% c("PT", "PVTT"))
+de_tnk_pt_vs_pvtt <- FindMarkers(
+  tnk_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+Idents(seu_merged) <- seu_merged$tissue
+tnk_cells <- subset(seu_merged, subset = major_celltype == "T/NK" & tissue %in% c("PT", "PVTT"))
+Idents(tnk_cells) <- tnk_cells$tissue
+de_tnk_pt_vs_pvtt <- FindMarkers(
+  tnk_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+de_tnk_pt_vs_pvtt <- FindMarkers(
+  tnk_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+Layers(seu_merged)
+seu_merged <- JoinLayers(seu_merged)
+Layers(seu_merged)
+Idents(seu_merged) <- seu_merged$tissue
+tnk_cells <- subset(seu_merged, subset = major_celltype == "T/NK" & tissue %in% c("PT", "PVTT"))
+de_tnk_pt_vs_pvtt <- FindMarkers(
+  tnk_cells,
+  ident.1 = "PT",
+  ident.2 = "PVTT",
+  test.use = "wilcox",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+head(de_tnk_pt_vs_pvtt[order(de_tnk_pt_vs_pvtt$p_val_adj), ], 15)
+write.csv(de_tnk_pt_vs_pvtt, "results/DE_TNK_PT_vs_PVTT.csv")
+p1 <- DimPlot(seu_merged, reduction = "umap", group.by = "major_celltype", label = TRUE) + NoLegend() + ggtitle("Cell types")
+p2 <- DimPlot(seu_merged, reduction = "umap", group.by = "tissue") + ggtitle("Tissue")
+library(patchwork)
+p1 + p2
+p1
+p2
+ggsave("figures/final_umap_celltype.pdf", p1, width = 7, height = 6)
+ggsave("figures/final_umap_tissue.pdf", p2, width = 7, height = 6)
+ggsave("figures/final_umap_celltype_tissue.pdf", p1 + p2, width = 12, height = 5)
+ggsave("figures/composition_stacked_bar.pdf", p_bar, width = 12, height = 6)
