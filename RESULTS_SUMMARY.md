@@ -1,113 +1,135 @@
-# نتائج المشروع: الفروقات بين HCC الأساسي والنقيلي
+# Results: Primary vs. Metastatic Hepatocellular Carcinoma
 
-## السؤال البحثي
-**How does the cellular composition and transcriptional landscape differ
-between primary and metastatic hepatocellular carcinoma?**
+## Research Question
+How does the cellular composition and transcriptional landscape differ
+between primary and metastatic hepatocellular carcinoma (HCC)?
 
-## البيانات
-تحليل بيانات single-cell RNA-seq من: Lu et al. 2022, Nat Commun 13:4594
-(GEO: GSE149614) — 67,101 خلية (بعد الـ QC) من 10 مرضى، عبر 4 أنواع أنسجة:
-NTL (كبد سليم)، PT (ورم أساسي)، PVTT (خثرة وريدية نقيلية)، MLN (عقدة ليمفاوية نقيلية).
+## Dataset
+Single-cell RNA-seq data from Lu et al. (2022, *Nat Commun* 13:4594; GEO
+accession GSE149614) were re-analyzed. The dataset comprises 67,101 cells
+(post-QC) from 10 HCC patients across four tissue types: non-tumor liver
+(NTL), primary tumor (PT), portal vein tumor thrombus (PVTT), and
+metastatic lymph node (MLN).
 
 ---
 
-## الجزء الأول: Cellular Composition
+## Part 1: Cellular Composition
 
-### الرسمة: `figures/composition_stacked_bar.pdf`
-بتوضح نسبة كل نوع خلية (Hepatocyte, T/NK, Myeloid, B, Endothelial, Fibroblast)
-في كل عينة، مقسمة حسب نوع النسيج.
+### Figure: `figures/composition_stacked_bar.pdf`
+Stacked bar plot showing the proportion of each major cell type
+(Hepatocyte, T/NK, Myeloid, B, Endothelial, Fibroblast) per sample,
+faceted by tissue type.
 
-### الجدول: `results/composition_PT_vs_Metastatic.csv`
+### Table: `results/composition_PT_vs_Metastatic.csv`
 
-| نوع الخلية | متوسط PT | متوسط Metastatic | الاتجاه | p-value |
+| Cell type | Mean proportion, PT | Mean proportion, Metastatic | Direction | p-value |
 |---|---|---|---|---|
-| T/NK | 17.5% | 9.9% | ↓ أقل في النقائل | 0.469 |
-| Hepatocyte | 39.2% | 48.2% | ↑ أكتر في النقائل | 0.692 |
-| Myeloid | 27.3% | 32.2% | ↑ أكتر في النقائل | 0.692 |
-| Fibroblast | 4.1% | 2.8% | ↓ أقل في النقائل | 0.811 |
-| Endothelial | 6.1% | 1.2% | ↓ أقل في النقائل | 0.864 |
-| B | 6.4% | 5.7% | ≈ متقارب | 0.937 |
+| T/NK | 17.5% | 9.9% | Decreased in metastatic sites | 0.469 |
+| Hepatocyte | 39.2% | 48.2% | Increased in metastatic sites | 0.692 |
+| Myeloid | 27.3% | 32.2% | Increased in metastatic sites | 0.692 |
+| Fibroblast | 4.1% | 2.8% | Decreased in metastatic sites | 0.811 |
+| Endothelial | 6.1% | 1.2% | Decreased in metastatic sites | 0.864 |
+| B | 6.4% | 5.7% | Comparable | 0.937 |
 
-### التفسير
-مفيش فرق **significant إحصائيًا** (كل الـ p-values > 0.05) بسبب صغر حجم العينة
-(3 مرضى بس عندهم PVTT، ومريض واحد عنده MLN). **لكن الاتجاه العام** بيتفق مع
-الورقة الأصلية: خلايا T/NK (المناعية) بتقل نسبيًا في الأنسجة النقيلية، بينما
-الخلايا السرطانية (Hepatocyte) والـ Myeloid بتزيد نسبيًا. هذا يتماشى مع ملاحظة
-الورقة الأصلية أن "PVTT و MLN تشبه PT في التركيبة الخلوية الكبرى أكثر مما تختلف
-عنه" — يعني الفرق الحقيقي بين الأورام الأساسية والنقيلية مش في *مين موجود*
-بقدر ما هو في *كيف تتصرف نفس أنواع الخلايا* — وهو محور الجزء الثاني.
+*Metastatic group = PVTT + MLN samples pooled. Statistical comparison by
+two-sided Wilcoxon rank-sum test on per-sample proportions.*
 
----
-
-## الجزء الثاني: Transcriptional Landscape
-
-تم عمل مقارنة تعبير جيني (Differential Expression) لنفس نوع الخلية بين PT وPVTT،
-لثلاثة أنواع خلايا رئيسية.
-
-### 1. Hepatocytes (الخلايا السرطانية نفسها)
-**الملف:** `results/DE_Hepatocyte_PT_vs_PVTT.csv`
-**الرسمة:** `figures/heatmap_hepatocyte_top_genes.pdf`
-
-- **أعلى في PT:** ALB, AKR1C1, AKR1C3, ALDH1A1, GC, CFHR1 — جينات وظيفية
-  طبيعية للكبد (خاصة ALB، الألبيومين).
-- **أعلى في PVTT:** EPCAM, KRT19, CLDN6, FBLN1, TUBB2B, WFDC2 — جينات مرتبطة
-  بالـ stemness والـ epithelial-mesenchymal transition (EMT)، وهي عملية
-  بتساعد الخلايا السرطانية على الانتشار والغزو.
-
-**الخلاصة:** الخلايا السرطانية في منطقة الانتشار (PVTT) فقدت جزء من هويتها
-الوظيفية ككبد طبيعي، واكتسبت خصائص أكثر عدوانية ترتبط بالانتشار — بما يتفق
-تمامًا مع مفهوم "pro-metastatic hepatocytes" في الورقة الأصلية.
-
-**رسمة إضافية:** `figures/volcano_hepatocyte_PT_vs_PVTT.pdf` — Volcano plot
-يوضح كل الجينات في هذه المقارنة دفعة واحدة (المحور الأفقي: حجم التغيير،
-المحور الرأسي: الدلالة الإحصائية)، مع تسمية أهم 15 جين.
-
-### 2. Myeloid cells (الخلايا البلعمية)
-**الملف:** `results/DE_Myeloid_PT_vs_PVTT.csv`
-
-- **أعلى في PVTT:** **MIF** (جين مثبط للمناعة، معروف في الورقة الأصلية بتفاعله
-  مع CD74 على الـ macrophages)، بالإضافة لـ S100A8, S100A10, VIM.
-- **أعلى في PT:** ALB, APOC3, APOH, TTR (على الأرجح ambient RNA من خلايا الكبد
-  المجاورة، وليست تعبيرًا حقيقيًا لخلايا Myeloid).
-
-**الخلاصة:** زيادة تعبير MIF في الـ Myeloid cells بمنطقة PVTT تدعم فكرة أن
-البيئة المناعية في مواقع الانتشار أكثر تثبيطًا للمناعة (immunosuppressive).
-
-### 3. T/NK cells (الخلايا المناعية اللمفاوية)
-**الملف:** `results/DE_TNK_PT_vs_PVTT.csv`
-
-- **أعلى في PVTT:** CD24, PRAME, CRABP1, MDK — هذه جينات مرتبطة عادة
-  بالخلايا السرطانية وليس بخلايا T/NK، مما يرجح وجود تلوث (ambient RNA) من
-  الخلايا السرطانية المجاورة في منطقة PVTT عالية الكثافة السرطانية — نتيجة
-  شائعة في تحليل scRNA-seq تستحق الحذر عند التفسير.
+### Interpretation
+No statistically significant differences were observed (all p > 0.05),
+consistent with the modest sample size (only 3 patients contributed PVTT
+tissue, and 1 patient contributed MLN tissue), which limits statistical
+power for compositional comparisons. However, the directional trends are
+consistent with the original study: T/NK cell proportion trends lower in
+metastatic sites, while malignant hepatocytes and myeloid cells trend
+higher. This aligns with the original report that PVTT and MLN more
+closely resemble PT than NTL in overall cell-type composition — indicating
+that the dominant biological differences between primary and metastatic
+HCC are unlikely to be driven by gross shifts in cell-type abundance, but
+rather by transcriptional reprogramming within each cell type (see Part 2).
 
 ---
 
-## (الإجابة على السؤال البحثي)
+## Part 2: Transcriptional Landscape
 
-1. **من ناحية التركيبة الخلوية (Composition):** لا يوجد فرق كبير أو دال
-   إحصائيًا بين PT والأنسجة النقيلية في نسب الأنواع الخلوية الرئيسية، رغم وجود
-   اتجاه نحو نقص الخلايا المناعية (T/NK) وزيادة الخلايا السرطانية والبلعمية في
-   مواقع الانتشار.
+Differential expression (DE) analysis was performed within each major cell
+type, comparing PT against PVTT (Wilcoxon rank-sum test, min.pct = 0.1,
+|log2FC| threshold = 0.25).
 
-2. **من ناحية التعبير الجيني (Transcriptional landscape):** الفرق الحقيقي
-   والملحوظ يظهر بوضوح على مستوى الجينات داخل كل نوع خلية:
-   - الخلايا السرطانية في مواقع الانتشار تفقد الهوية الوظيفية للكبد وتكتسب
-     صفات EMT/stemness.
-   - الخلايا البلعمية في مواقع الانتشار تُظهر توقيعًا جينيًا أكثر تثبيطًا
-     للمناعة (MIF↑).
+### 1. Hepatocytes (malignant epithelial cells)
+**Table:** `results/DE_Hepatocyte_PT_vs_PVTT.csv`
+**Figures:** `figures/heatmap_hepatocyte_top_genes.pdf`,
+`figures/volcano_hepatocyte_PT_vs_PVTT.pdf`
 
-هذا يشير إلى أن **الانتقال (metastasis) في HCC مدفوع بشكل أساسي بإعادة برمجة
-النشاط الجيني لنفس أنواع الخلايا الموجودة، وليس بتغيير جذري في التركيبة
-الخلوية للورم** — وهو استنتاج متوافق مع ما توصلت إليه الورقة العلمية الأصلية.
+- **Upregulated in PT:** *ALB*, *AKR1C1*, *AKR1C3*, *ALDH1A1*, *GC*,
+  *CFHR1* — genes associated with normal hepatocyte metabolic function
+  (notably *ALB*, encoding albumin).
+- **Upregulated in PVTT:** *EPCAM*, *KRT19*, *CLDN6*, *FBLN1*, *TUBB2B*,
+  *WFDC2* — genes associated with stemness and epithelial-mesenchymal
+  transition (EMT), a process implicated in tumor invasion and metastatic
+  spread.
+
+**Interpretation:** Malignant hepatocytes at the metastatic site show
+reduced expression of normal hepatocyte identity genes and increased
+expression of stemness/EMT markers, consistent with the "pro-metastatic
+hepatocyte" phenotype described in the original study.
+
+### 2. Myeloid cells
+**Table:** `results/DE_Myeloid_PT_vs_PVTT.csv`
+
+- **Upregulated in PVTT:** ***MIF*** — an immunosuppressive ligand
+  reported in the original study to signal through CD74 on
+  tumor-associated macrophages — along with *S100A8*, *S100A10*, and
+  *VIM*.
+- **Upregulated in PT:** *ALB*, *APOC3*, *APOH*, *TTR* — likely reflecting
+  ambient RNA contamination from neighboring hepatocytes rather than
+  genuine myeloid expression.
+
+**Interpretation:** Elevated *MIF* expression in myeloid cells at the
+metastatic site supports a more immunosuppressive microenvironment in
+regions of tumor spread.
+
+### 3. T/NK cells
+**Table:** `results/DE_TNK_PT_vs_PVTT.csv`
+
+- **Upregulated in PVTT:** *CD24*, *PRAME*, *CRABP1*, *MDK* — genes not
+  typically associated with lymphoid identity, more consistent with
+  ambient RNA contamination from adjacent malignant cells in the
+  densely tumor-infiltrated PVTT microenvironment. This result should be
+  interpreted with caution and flags a limitation of the analysis.
 
 ---
 
-## قيود التحليل
-- حجم العينة صغير (10 مرضى، 3 منهم فقط لديهم PVTT، 1 فقط لديه MLN) — يحد من
-  القوة الإحصائية لمقارنات التركيبة الخلوية.
-- بعض النتائج (خاصة في T/NK) قد تتأثر بـ ambient RNA من الخلايا المجاورة.
-- تم استخدام RPCA integration بدلاً من CCA (المستخدم في الورقة الأصلية) بسبب
-  قيود الذاكرة، وقد ينتج عن ذلك اختلافات طفيفة في تفاصيل الـ clustering (29
-  cluster بدلاً من 53 في الورقة الأصلية)، رغم أن التصنيف على مستوى الأنواع
-  الخلوية الكبرى تطابق بشكل وثيق مع تصنيف الباحثين الأصليين.
+## Summary: Answer to the Research Question
+
+1. **Cellular composition:** No statistically significant differences in
+   major cell-type proportions were detected between PT and metastatic
+   sites (PVTT/MLN), though a trend toward reduced T/NK infiltration and
+   increased hepatocyte/myeloid abundance was observed. Cell-type
+   composition alone does not robustly distinguish primary from
+   metastatic HCC in this dataset.
+
+2. **Transcriptional landscape:** Clear, statistically significant
+   transcriptional differences were identified within matched cell types.
+   Malignant hepatocytes at metastatic sites downregulate normal liver
+   identity genes and upregulate EMT/stemness markers. Myeloid cells at
+   metastatic sites upregulate the immunosuppressive gene *MIF*.
+
+**Conclusion:** Metastatic progression in HCC appears to be driven
+primarily by transcriptional reprogramming within existing cell
+populations — rather than by wholesale changes in the cellular composition
+of the tumor microenvironment. This is consistent with the conclusions of
+the original study (Lu et al., 2022).
+
+---
+
+## Limitations
+- Small patient cohort (n = 10; only 3 patients contributed PVTT tissue
+  and 1 contributed MLN tissue), limiting statistical power for
+  compositional comparisons.
+- Some DE results (notably in T/NK cells) may be confounded by ambient
+  RNA contamination from adjacent malignant cells.
+- RPCA integration was used in place of the CCA method used in the
+  original study, due to memory constraints; this yielded 29 clusters
+  versus the 53 reported originally, though major cell-type annotations
+  (validated against the authors' own per-cell labels) closely matched
+  published proportions.
