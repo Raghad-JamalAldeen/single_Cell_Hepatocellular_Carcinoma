@@ -16,7 +16,7 @@
 ## (a table, a figure, or a checkpoint .rds file). Do not skip
 ## sections — later sections depend on objects created earlier.
 ##
-## IMPORTANT — before running: edit the two paths marked
+## IMPORTANT — before running: edit the path marked
 ## "CHANGE THIS" below to match your own machine.
 ## =================================================================
 
@@ -311,7 +311,7 @@ saveRDS(seu_merged, "data/seu_final_annotated.rds")
 ## SECTION 12 — RESEARCH QUESTION, PART 1: Cellular composition
 ## PT vs metastatic sites (PVTT, MLN)
 ## Result: results/composition_PT_vs_Metastatic.csv
-##         figures/composition_stacked_bar.pdf
+##         figures/05_composition_stacked_bar.png
 ## =================================================================
 
 seu_merged <- readRDS("data/seu_final_annotated.rds")
@@ -333,7 +333,7 @@ p_bar <- prop_df %>%
   labs(y = "Proportion of cells", x = NULL, fill = "Cell type") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-ggsave("figures/composition_stacked_bar.pdf", p_bar, width = 12, height = 6)
+ggsave("figures/05_composition_stacked_bar.png", p_bar, width = 12, height = 6, dpi = 150)
 
 ## Statistical comparison: Primary (PT) vs Metastatic (PVTT+MLN)
 comp_pt_vs_met <- prop_df %>%
@@ -401,37 +401,71 @@ write.csv(de_tnk_pt_vs_pvtt, "results/DE_TNK_PT_vs_PVTT.csv")
 
 ## =================================================================
 ## SECTION 14 — Final figures
-## Result: figures/final_umap_celltype_tissue.pdf
-##         figures/heatmap_hepatocyte_top_genes.pdf
+## Result: figures/01_umap_by_celltype_paper.png
+##         figures/02_final_umap_celltype.png
+##         figures/03_final_umap_tissue.png
+##         figures/04_final_umap_celltype_tissue.png
 ## =================================================================
 
-## UMAP overview: cell type + tissue side by side
+## UMAP validation: colored by the authors' original cell-type labels
+p0 <- DimPlot(seu_merged, reduction = "umap", group.by = "celltype_paper")
+ggsave("figures/01_umap_by_celltype_paper.png", p0, width = 7, height = 6, dpi = 150)
+
+## UMAP: our own cell-type annotation
 p1 <- DimPlot(seu_merged, reduction = "umap", group.by = "major_celltype",
               label = TRUE) + NoLegend() + ggtitle("Cell types")
+ggsave("figures/02_final_umap_celltype.png", p1, width = 7, height = 6, dpi = 150)
+
+## UMAP: tissue of origin
 p2 <- DimPlot(seu_merged, reduction = "umap", group.by = "tissue") +
   ggtitle("Tissue")
+ggsave("figures/03_final_umap_tissue.png", p2, width = 7, height = 6, dpi = 150)
 
-ggsave("figures/final_umap_celltype_tissue.pdf", p1 + p2, width = 12, height = 5)
+## Combined UMAP: cell type + tissue side by side
+ggsave("figures/04_final_umap_celltype_tissue.png", p1 + p2, width = 12, height = 5, dpi = 150)
 
-## Heatmap of top DE genes in Hepatocytes (PT vs PVTT)
+
+## =================================================================
+## SECTION 15 — Top DE genes: bar chart, dot plot, volcano plot
+## (Hepatocytes, PT vs PVTT)
+## Result: figures/06_barchart_top_genes_hepatocyte.png
+##         figures/07_dotplot_top_genes_hepatocyte.png
+##         figures/08_volcano_hepatocyte_PT_vs_PVTT.png
+## =================================================================
+
 top_genes <- rownames(de_hep_pt_vs_pvtt[order(de_hep_pt_vs_pvtt$p_val_adj), ])[1:15]
 
 hep_only <- subset(seu_merged, subset = major_celltype == "Hepatocyte" &
                                          tissue %in% c("PT", "PVTT"))
-avg_exp <- AverageExpression(hep_only, features = top_genes, group.by = "tissue")$RNA
 
-pdf("figures/heatmap_hepatocyte_top_genes.pdf", width = 6, height = 8)
-pheatmap(log1p(avg_exp), scale = "row",
-         main = "Top DE genes: Hepatocyte PT vs PVTT")
-dev.off()
+## ---- Bar chart: quick visual summary of the top 15 genes ----
+top_genes_df <- de_hep_pt_vs_pvtt[top_genes, ] %>%
+  rownames_to_column("gene") %>%
+  mutate(gene = fct_reorder(gene, avg_log2FC))
 
-## =================================================================
-## SECTION 15 — Volcano plot (Hepatocytes, PT vs PVTT)
-## Result: figures/volcano_hepatocyte_PT_vs_PVTT.pdf
-## =================================================================
+p_bar_genes <- ggplot(top_genes_df, aes(x = gene, y = avg_log2FC, fill = avg_log2FC > 0)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "#2166AC", "FALSE" = "firebrick"),
+                     labels = c("TRUE" = "Higher in PT", "FALSE" = "Higher in PVTT")) +
+  theme_minimal(base_size = 13) +
+  labs(title = "Top 15 Differentially Expressed Genes",
+       subtitle = "Hepatocytes: Primary Tumor vs PVTT",
+       x = NULL, y = expression(log[2]~"Fold Change"),
+       fill = NULL) +
+  theme(legend.position = "top")
 
-library(ggrepel)
+ggsave("figures/06_barchart_top_genes_hepatocyte.png", p_bar_genes, width = 8, height = 6, dpi = 150)
 
+## ---- Dot plot: expression level + percent expressing, per tissue ----
+p_dotplot <- DotPlot(hep_only, features = top_genes, group.by = "tissue") +
+  RotatedAxis() +
+  theme(axis.text.x = element_text(size = 9)) +
+  labs(title = "Top 15 DE Genes: Expression by Tissue", x = NULL, y = NULL)
+
+ggsave("figures/07_dotplot_top_genes_hepatocyte.png", p_dotplot, width = 9, height = 4, dpi = 150)
+
+## ---- Volcano plot: all hepatocyte genes, PT vs PVTT ----
 volcano_df <- de_hep_pt_vs_pvtt %>%
   rownames_to_column("gene") %>%
   mutate(
@@ -460,12 +494,13 @@ p_volcano <- ggplot(volcano_df, aes(x = avg_log2FC, y = -log10(p_val_adj), color
     panel.grid.minor = element_blank()
   )
 
-ggsave("figures/volcano_hepatocyte_PT_vs_PVTT.pdf", p_volcano, width = 8, height = 6)
+ggsave("figures/08_volcano_hepatocyte_PT_vs_PVTT.png", p_volcano, width = 8, height = 6, dpi = 150)
 
 
 ## =================================================================
 ## END OF ANALYSIS
-## See results/ for all CSV tables and figures/ for all plots.
+## See results/ for all CSV tables and figures/ for all plots
+## (numbered 01-08 in logical viewing order).
 ## See RESULTS_SUMMARY.md for the write-up answering the research
 ## question based on these outputs.
 ## =================================================================

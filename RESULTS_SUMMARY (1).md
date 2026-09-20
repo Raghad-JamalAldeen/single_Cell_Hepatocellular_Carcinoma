@@ -11,11 +11,24 @@ accession GSE149614) were re-analyzed. The dataset comprises 67,101 cells
 (NTL), primary tumor (PT), portal vein tumor thrombus (PVTT), and
 metastatic lymph node (MLN).
 
+## Figure Index
+
+| File | Description |
+|---|---|
+| `01_umap_by_celltype_paper.png` | UMAP colored by the original authors' cell-type labels — validates our clustering against the published atlas |
+| `02_final_umap_celltype.png` | UMAP colored by our own cell-type annotation |
+| `03_final_umap_tissue.png` | UMAP colored by tissue of origin (NTL/PT/PVTT/MLN) |
+| `04_final_umap_celltype_tissue.png` | Cell type and tissue UMAPs side by side |
+| `05_composition_stacked_bar.png` | Cell-type proportions per sample, by tissue — **answers Part 1** |
+| `06_barchart_top_genes_hepatocyte.png` | Top 15 DE genes, PT vs PVTT hepatocytes, ranked by fold change |
+| `07_dotplot_top_genes_hepatocyte.png` | Same top 15 genes, showing expression level and percent-expressing cells per tissue |
+| `08_volcano_hepatocyte_PT_vs_PVTT.png` | All hepatocyte genes, PT vs PVTT — **strongest visual evidence for Part 2** |
+
 ---
 
 ## Part 1: Cellular Composition
 
-### Figure: `figures/composition_stacked_bar.pdf`
+### Figure: `figures/05_composition_stacked_bar.png`
 Stacked bar plot showing the proportion of each major cell type
 (Hepatocyte, T/NK, Myeloid, B, Endothelial, Fibroblast) per sample,
 faceted by tissue type.
@@ -57,8 +70,9 @@ type, comparing PT against PVTT (Wilcoxon rank-sum test, min.pct = 0.1,
 
 ### 1. Hepatocytes (malignant epithelial cells)
 **Table:** `results/DE_Hepatocyte_PT_vs_PVTT.csv`
-**Figures:** `figures/heatmap_hepatocyte_top_genes.pdf`,
-`figures/volcano_hepatocyte_PT_vs_PVTT.pdf`
+**Figures:** `figures/06_barchart_top_genes_hepatocyte.png`,
+`figures/07_dotplot_top_genes_hepatocyte.png`,
+`figures/08_volcano_hepatocyte_PT_vs_PVTT.png`
 
 - **Upregulated in PT:** *ALB*, *AKR1C1*, *AKR1C3*, *ALDH1A1*, *GC*,
   *CFHR1* — genes associated with normal hepatocyte metabolic function
