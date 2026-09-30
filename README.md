@@ -130,3 +130,9 @@ write-up with full interpretation and limitations.
 Lu, Y., Yang, A., Quan, C. et al. A single-cell atlas of the multicellular
 ecosystem of primary and metastatic hepatocellular carcinoma. *Nat Commun*
 13, 4594 (2022). https://doi.org/10.1038/s41467-022-32283-3
+
+## Team Members
+- **Shahd Hosam** — [@shahdhossam000](https://github.com/shahdhossam000)
+- **Maryam Hany** — [@hanymaryam515-boop](https://github.com/hanymaryam515-boop)
+- **Ehab Ashraff** — [@ehapashraff](https://github.com/ehapashraff)
+- **Alzahraa Jad** — [@alzahraamostafa](https://github.com/alzahraamostafa)
