@@ -278,33 +278,389 @@ saveRDS(seu_merged, "data/seu_merged_after_clustering.rds")
 
 
 ## =================================================================
-## SECTION 11 — Annotation (assign a cell type to each cluster)
-## Result: data/seu_final_annotated.rds — the master analysis file
+## SECTION 11 — Manual marker review and published-label annotation
 ##
-## Strategy: each cluster is assigned the majority cell type from
-## the authors' original per-cell annotation (celltype_paper).
-## This validates our independent clustering against the published
-## atlas rather than re-deriving marker genes from scratch.
+## Manual cluster labels were assigned from marker expression and
+## compared with published per-cell labels for the reviewed run.
+## Published labels are retained for downstream analyses.
+## Lineage annotation alone does not establish malignancy.
 ## =================================================================
 
 seu_merged <- readRDS("data/seu_merged_after_clustering.rds")
 
-cluster_composition <- table(seu_merged$seurat_clusters, seu_merged$celltype_paper)
-cluster_annotations <- apply(cluster_composition, 1, function(x) names(which.max(x)))
+DefaultAssay(seu_merged) <- "RNA"
 
-seu_merged$major_celltype <- unname(cluster_annotations[as.character(seu_merged$seurat_clusters)])
-
-table(seu_merged$major_celltype)
-## B=3709 Endothelial=3661 Fibroblast=1997 Hepatocyte=19488
-## Myeloid=15219 T/NK=23027
-## (closely matches the authors' own celltype_paper counts —
-## confirms clustering quality)
-
-## IMPORTANT: join per-patient expression layers into one before
-## any downstream differential expression analysis
 seu_merged <- JoinLayers(seu_merged)
 
-saveRDS(seu_merged, "data/seu_final_annotated.rds")
+Idents(seu_merged) <- "seurat_clusters"
+
+dir.create(
+  "results/annotation",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "figures",
+  showWarnings = FALSE
+)
+
+# Preserve the original authors' per-cell labels.
+if (!"celltype_paper" %in% names(seu_merged[[]])) {
+
+  stopifnot(
+    "celltype" %in% names(seu_merged[[]])
+  )
+
+  seu_merged$celltype_paper <- seu_merged$celltype
+}
+
+stopifnot(
+  !anyNA(seu_merged$celltype_paper)
+)
+
+
+## 11.1 — Identify markers without using published identities
+## Use up to 200 cells per cluster for this descriptive screen.
+
+set.seed(123)
+
+cells_by_cluster <- split(
+  colnames(seu_merged),
+  as.character(seu_merged$seurat_clusters)
+)
+
+marker_cells <- unlist(
+  lapply(
+    cells_by_cluster,
+    function(x) {
+      sample(x, min(length(x), 200))
+    }
+  ),
+  use.names = FALSE
+)
+
+marker_counts <- as(
+  seu_merged[["RNA"]]$counts[
+    ,
+    marker_cells,
+    drop = FALSE
+  ],
+  "dgCMatrix"
+)
+
+marker_obj <- CreateSeuratObject(
+  counts = marker_counts,
+  min.cells = 0,
+  min.features = 0
+)
+
+marker_obj$cluster <- as.character(
+  seu_merged$seurat_clusters[
+    match(
+      colnames(marker_obj),
+      colnames(seu_merged)
+    )
+  ]
+)
+
+marker_obj <- NormalizeData(marker_obj)
+
+Idents(marker_obj) <- "cluster"
+
+annotation_markers <- FindAllMarkers(
+  marker_obj,
+  only.pos = TRUE,
+  test.use = "wilcox",
+  min.pct = 0.25,
+  logfc.threshold = 0.5,
+  max.cells.per.ident = 200,
+  random.seed = 123,
+  densify = FALSE
+)
+
+if (nrow(annotation_markers) == 0) {
+  stop(
+    "No markers returned. Check the marker-test warnings."
+  )
+}
+
+write.csv(
+  annotation_markers,
+  "results/annotation/all_cluster_markers.csv",
+  row.names = FALSE
+)
+
+top20 <- do.call(
+  rbind,
+  lapply(
+    split(
+      annotation_markers,
+      annotation_markers$cluster
+    ),
+    function(x) {
+      head(
+        x[order(-x$avg_log2FC), ],
+        20
+      )
+    }
+  )
+)
+
+write.csv(
+  top20,
+  "results/annotation/top20_markers_per_cluster.csv",
+  row.names = FALSE
+)
+
+rm(marker_counts, marker_obj)
+gc()
+
+
+## 11.2 — Review canonical-marker expression across all cells
+
+annotation_genes <- c(
+  "ALB", "SERPINA1", "HNF4A",
+  "EPCAM", "KRT19",
+  "CD3D", "CD3E", "NKG7", "GNLY",
+  "LYZ", "CD14", "CD68", "CD163",
+  "CD1C", "CLEC9A", "CLEC4C",
+  "MS4A1", "CD79A", "JCHAIN", "MZB1",
+  "VWF", "PECAM1",
+  "COL1A1", "COL1A2", "DCN",
+  "RGS5", "PDGFRB", "TPSAB1"
+)
+
+annotation_genes <- intersect(
+  annotation_genes,
+  rownames(seu_merged)
+)
+
+if (length(annotation_genes) == 0) {
+  stop("No canonical markers found. Check gene identifiers.")
+}
+
+if (!"data" %in% Layers(seu_merged[["RNA"]])) {
+  seu_merged <- NormalizeData(seu_merged)
+}
+
+p_annotation <- DotPlot(
+  seu_merged,
+  features = annotation_genes,
+  group.by = "seurat_clusters"
+) +
+  RotatedAxis()
+
+ggsave(
+  "figures/annotation_markers_by_cluster.png",
+  plot = p_annotation,
+  width = 14,
+  height = 10,
+  dpi = 150
+)
+
+
+## 11.3 — Record our marker-based manual decisions
+## These decisions apply to the reviewed 36-cluster run only.
+## Plasma cells are grouped under B for broad-label comparison.
+
+manual_review <- read.table(
+  header = TRUE,
+  sep = "|",
+  colClasses = "character",
+  text = "cluster|manual_label|supporting_markers
+0|T/NK|TRGC1;TRGC2;TRDC;CD8A
+1|Hepatocyte|CYP2D6;BHMT;FGL1;AHSG
+2|T/NK|CD8A;CD8B;GZMK;CD3E
+3|Myeloid|C1QA;C1QC;FOLR2;CD209
+4|T/NK|IL7R;CD40LG;CCR7;CD3G
+5|T/NK|KLRF1;NKG7;GNLY;TRDC
+6|Hepatocyte|ARG1;FABP1;APOA2;OTC
+7|Myeloid|CD5L;MARCO;TIMD4;CD163
+8|Myeloid|SPP1;GPNMB;TREM2;MMP12
+9|Epithelial|EPCAM;KRT19;CHGA;CHGB
+10|Myeloid|FCN1;S100A8;S100A9;LST1
+11|Hepatocyte|HNF4A;FABP1;APOA2;CDC45
+12|Endothelial|VWF;PLVAP;CD34;ROBO4
+13|B|JCHAIN;MZB1;TNFRSF17;DERL3
+14|T/NK|FOXP3;IL2RA;CTLA4;TRAC
+15|Epithelial|HNF4A;FABP1;EPCAM;KRT19
+16|Myeloid|CD1C;CLEC10A;FCER1A;CD1E
+17|B|MS4A1;CD19;CD79A;BANK1
+18|Fibroblast|COL1A1;COL1A2;COL3A1;DCN
+19|Hepatocyte|HNF4A;APOA2;CCNB1;PLK1
+20|Hepatocyte|SLCO1B3;SLC22A1;CYP2C9;HAMP
+21|T/NK|CD3D;CD3E;TRAC;MKI67
+22|Endothelial|CLEC4G;CLEC4M;STAB2;OIT3
+23|Mural|MYH11;CNN1;TAGLN;ACTA2
+24|Endothelial|GJA5;SEMA3G;BMX;CLDN5
+25|Myeloid|FCGR1A;TREM2;F13A1;MKI67
+26|Myeloid|CLEC9A;XCR1;BATF3;FLT3
+27|T/NK|CD8A;CD8B;CD3D;LAG3
+28|B|MZB1;TNFRSF17;DERL3;RRM2
+29|T/NK|CD6;TRAT1;IL7R;IFNG
+30|Epithelial|KRT7;CFTR;MMP7;PKHD1
+31|Unresolved|PECAM1;CDH5;RGS5;PDGFRB
+32|Myeloid|LILRA4;CLEC4C;SPIB;GZMB
+33|Myeloid|TPSAB1;TPSB2;CPA3;KIT
+34|B|MZB1;JCHAIN;XBP1;CD79A
+35|Myeloid|CD5L;MARCO;TIMD4;CD163"
+)
+
+manual_review$needs_review <-
+  manual_review$cluster %in%
+  as.character(c(0, 5, 9, 11, 15, 19, 25, 28, 31))
+
+
+## 11.4 — Check exact cell-to-cluster membership
+## Do not transfer manual labels merely because cluster IDs match.
+
+cell_names <- colnames(seu_merged)
+
+cluster_ids <- as.character(
+  seu_merged$seurat_clusters
+)
+
+stopifnot(
+  !anyNA(cluster_ids),
+  anyDuplicated(cell_names) == 0
+)
+
+ord <- order(
+  cell_names,
+  method = "radix"
+)
+
+clustering_text <- paste(
+  paste(
+    cell_names[ord],
+    cluster_ids[ord],
+    sep = "\t"
+  ),
+  collapse = "\n"
+)
+
+fingerprint_file <- tempfile("annotation-clustering-")
+
+writeBin(
+  charToRaw(enc2utf8(clustering_text)),
+  fingerprint_file
+)
+
+current_fingerprint <- unname(
+  tools::md5sum(fingerprint_file)
+)
+
+unlink(fingerprint_file)
+
+reviewed_fingerprint <- "51d7ab76ca3e18deb4df04f28008c50d"
+
+
+## 11.5 — Compare manual and published labels when applicable
+
+seu_merged$celltype_manual <- NA_character_
+seu_merged$annotation_needs_review <- NA
+
+annotation_comparison <- data.frame(
+  Manual = character(),
+  Published = character(),
+  Freq = integer()
+)
+
+comparison_percent <- data.frame()
+
+annotation_agreement <- data.frame(
+  status = "Manual comparison not performed: different clustering",
+  cells_compared = 0L,
+  percent_agreement = NA_real_
+)
+
+if (current_fingerprint == reviewed_fingerprint) {
+
+  idx <- match(
+    cluster_ids,
+    manual_review$cluster
+  )
+
+  stopifnot(!anyNA(idx))
+
+  seu_merged$celltype_manual <-
+    manual_review$manual_label[idx]
+
+  seu_merged$annotation_needs_review <-
+    manual_review$needs_review[idx]
+
+  comparison <- table(
+    Manual = seu_merged$celltype_manual,
+    Published = seu_merged$celltype_paper
+  )
+
+  annotation_comparison <- as.data.frame(
+    comparison
+  )
+
+  comparison_percent <- round(
+    100 * prop.table(comparison, margin = 1),
+    1
+  )
+
+  annotation_agreement <- data.frame(
+    status = "Compared marker-based manual labels with published labels",
+    cells_compared = ncol(seu_merged),
+    percent_agreement = 100 * mean(
+      seu_merged$celltype_manual ==
+        seu_merged$celltype_paper
+    )
+  )
+
+} else {
+
+  warning(
+    "Different clustering: manual labels were NOT transferred. ",
+    "Published labels will still be used downstream."
+  )
+}
+
+manual_review$reviewed_clustering_fingerprint <-
+  reviewed_fingerprint
+
+write.csv(
+  manual_review,
+  "results/annotation/reviewed_manual_decisions.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  annotation_comparison,
+  "results/annotation/manual_vs_published_counts.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  comparison_percent,
+  "results/annotation/manual_vs_published_percent.csv"
+)
+
+write.csv(
+  annotation_agreement,
+  "results/annotation/agreement_all_cells.csv",
+  row.names = FALSE
+)
+
+print(annotation_agreement)
+
+
+## 11.6 — Retain published labels for downstream analyses
+## Manual labels remain separate for transparency.
+
+seu_merged$major_celltype <- seu_merged$celltype_paper
+
+table(seu_merged$major_celltype)
+
+saveRDS(
+  seu_merged,
+  "data/seu_final_annotated.rds"
+)
 
 
 ## =================================================================
